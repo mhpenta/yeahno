@@ -7,7 +7,7 @@
 > [!WARNING]
 > This project is experimental. API may change.
 
-Define a form once. Run it as a TUI or expose it as MCP tools.
+Define a form once. Run it as a TUI or expose it as MCP tools. For administrative bots and humans alike!
 
 Built on [huh](https://github.com/charmbracelet/huh) and [Go's official MCP SDK](https://github.com/modelcontextprotocol/go-sdk).
 
