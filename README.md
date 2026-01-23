@@ -1,7 +1,7 @@
 # yeahno
 
 <p>
-<img width="525" alt="yeahno Logo" src="https://github.com/user-attachments/assets/1aeec958-e8cd-4376-a876-21e161af3023">
+<img width="525" alt="yeahno Logo" src="https://github-production-user-asset-6210df.s3.amazonaws.com/183146177/538075071-1aeec958-e8cd-4376-a876-21e161af3023.jpg">
 </p>
 
 > [!WARNING]
@@ -83,6 +83,48 @@ Each MCP-enabled option becomes its own tool with a clean schema containing only
 | `.Validate(fn)` | Custom validation function |
 
 Options not marked with `.MCP(true)` are hidden from LLMs but available in TUI.
+
+## Tips for MCP Tools
+
+### Write Clear Descriptions
+
+The `.Description()` text becomes the MCP tool's description that LLMs see when deciding which tool to use. Write descriptions that:
+
+- **Explain what the tool does** clearly and concisely
+- **Specify output format** (e.g., "Returns JSON data" vs "Returns Markdown text")  
+- **Mention where data is stored** if applicable (e.g., "Saved to the users table")
+- **Distinguish similar tools** - if you have multiple tools that sound similar, make their differences explicit
+
+```go
+// ❌ Bad: Vague, doesn't help LLM distinguish from similar tools
+yeahno.NewOption("Create Report", "create_report").
+    Description("Create a report")
+
+// ✅ Good: Clear output format, storage location, and purpose
+yeahno.NewOption("Create Report", "create_report").
+    Description("Generate a Markdown research report stored in the reports table. Output is human-readable narrative text.")
+```
+
+### Avoid `fmt.Print` in Handlers
+
+> [!CAUTION]
+> **Never use `fmt.Print`, `fmt.Println`, or `fmt.Printf` in MCP tool handlers when running in stdio mode.**
+
+MCP stdio transport uses stdout for JSON-RPC communication. Any text written to stdout (including debug prints) will corrupt the JSON stream and cause errors like:
+
+```
+ERROR calling "tools/call": invalid character '=' looking for beginning of value
+```
+
+Use `slog` or another logger configured to write to stderr instead:
+
+```go
+// ❌ Bad: Corrupts MCP stdio communication
+fmt.Println("Processing request...")
+
+// ✅ Good: Logs to stderr, not stdout
+slog.Info("Processing request...")
+```
 
 ## Example
 
