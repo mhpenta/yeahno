@@ -10,17 +10,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Demonstrates a menu with handler and MCP-enabled options.
+// Demonstrates CLI generation from yeahno menus.
 //
-// Run CLI:
+// Run with:
 //
-//	go run ./examples/repair list-tasks
-//	go run ./examples/repair add-task --title "Fix bug"
-//	go run ./examples/repair complete-task --id 123
+//	go run ./examples/cli list-tasks
+//	go run ./examples/cli add-task --title "Buy milk" --priority high
+//	go run ./examples/cli complete-task --id 123
 //
-// Run TUI:
+// Or run TUI mode:
 //
-//	go run ./examples/repair tui
+//	go run ./examples/cli tui
 func main() {
 	if err := run(); err != nil {
 		os.Exit(1)
@@ -28,15 +28,17 @@ func main() {
 }
 
 func run() error {
+	// Build the shared menu definition
 	menu := buildMenu()
 
+	// Create root CLI command
 	rootCmd := &cobra.Command{
-		Use:   "repair",
-		Short: "Task management tool",
-		Long:  "A task manager demonstrating yeahno TUI, CLI, and MCP generation.",
+		Use:   "tasks",
+		Short: "Task management CLI",
+		Long:  "A task manager demonstrating yeahno CLI generation.",
 	}
 
-	// TUI mode
+	// Add TUI subcommand for interactive mode
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "tui",
 		Short: "Run interactive TUI mode",
@@ -50,13 +52,15 @@ func run() error {
 		},
 	})
 
-	// Register CLI commands from menu
+	// Register CLI commands from the same menu
 	if err := menu.RegisterCLI(rootCmd); err != nil {
 		return err
 	}
 
-	// Use yeahno theme with fang
+	// Use yeahno's default theme (or customize with .WithPrimary(), etc.)
 	theme := yeahno.DefaultTheme()
+
+	// Use fang with yeahno theme
 	return fang.Execute(context.Background(), rootCmd,
 		fang.WithVersion("1.0.0"),
 		fang.WithColorSchemeFunc(theme.FangColorScheme()),
@@ -90,7 +94,7 @@ func buildMenu() *yeahno.Select[string] {
 				MCP(true),
 
 			yeahno.NewOption("Settings", "settings").
-				Description("TUI only"),
+				Description("TUI only - configure preferences"),
 
 			yeahno.NewOption("Exit", "exit"),
 		).
@@ -100,14 +104,18 @@ func buildMenu() *yeahno.Select[string] {
 			case "list":
 				return []string{"Buy milk", "Fix bug", "Write docs"}, nil
 			case "add":
-				return fmt.Sprintf("Added: %s", fields["title"]), nil
+				priority := fields["priority"]
+				if priority == "" {
+					priority = "normal"
+				}
+				return fmt.Sprintf("Added task: %s (priority: %s)", fields["title"], priority), nil
 			case "complete":
-				return fmt.Sprintf("Completed task %s", fields["id"]), nil
+				return fmt.Sprintf("Completed task #%s", fields["id"]), nil
 			case "settings":
 				return "Opening settings...", nil
 			case "exit":
 				return "Goodbye!", nil
 			}
-			return nil, fmt.Errorf("unknown: %s", action)
+			return nil, fmt.Errorf("unknown action: %s", action)
 		})
 }

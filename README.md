@@ -7,9 +7,9 @@
 > [!WARNING]
 > This project is experimental. API may change.
 
-Define a form once. Run it as a TUI or expose it as MCP tools. For administrative bots and humans alike!
+Define a form once. Run it as a TUI, CLI, or MCP tools. For administrative bots and humans alike!
 
-Built on [huh](https://github.com/charmbracelet/huh) and [Go's official MCP SDK](https://github.com/modelcontextprotocol/go-sdk).
+Built on [huh](https://github.com/charmbracelet/huh), [Cobra](https://github.com/spf13/cobra), and [Go's official MCP SDK](https://github.com/modelcontextprotocol/go-sdk).
 
 ## Install
 
@@ -27,12 +27,12 @@ menu := yeahno.NewSelect[string]().
     ToolPrefix("site").  // Tools will be "site_add", "site_list"
     Options(
         yeahno.NewOption("Add", "add").
-            Description("Add a new site").
+            Description("Register a new site for monitoring. Saves to the sites table.").
             WithField(yeahno.NewInput().Key("domain").Format("domain")).
             MCP(true),
 
         yeahno.NewOption("List", "list").
-            Description("List all sites").
+            Description("List all monitored sites. Returns a formatted text list.").
             MCP(true),
 
         yeahno.NewOption("Admin", "admin"),  // TUI only
@@ -46,11 +46,16 @@ menu := yeahno.NewSelect[string]().
 // Run as TUI
 result, err := menu.Run(ctx)
 
+// Or generate CLI commands (uses Cobra + fang for styled output)
+rootCmd := &cobra.Command{Use: "myapp", Short: "My app"}
+menu.RegisterCLI(rootCmd)
+fang.Execute(ctx, rootCmd, fang.WithColorSchemeFunc(yeahno.DefaultTheme().FangColorScheme()))
+
 // Or register as MCP tools
 menu.RegisterTools(server)
 ```
 
-Each MCP-enabled option becomes its own tool with a clean schema containing only that option's fields.
+Each MCP-enabled option becomes its own tool (or CLI subcommand) with a clean schema containing only that option's fields.
 
 ## API
 
@@ -59,9 +64,11 @@ Each MCP-enabled option becomes its own tool with a clean schema containing only
 | Method | Description |
 |--------|-------------|
 | `.ToolPrefix(prefix)` | Prefix for all tool names (e.g., "site" → "site_add") |
-| `.Handler(fn)` | Shared handler for TUI and MCP |
+| `.Handler(fn)` | Shared handler for TUI, CLI, and MCP |
 | `.ToTools()` | Generate `[]ToolDef` (tool + handler pairs) |
 | `.RegisterTools(server)` | Register all tools with MCP server |
+| `.RegisterCLI(cmd)` | Register all subcommands with Cobra command |
+| `.CLI()` | Generate standalone Cobra command tree |
 
 ### Option Methods
 
@@ -82,7 +89,47 @@ Each MCP-enabled option becomes its own tool with a clean schema containing only
 | `.Format(format)` | Validation format: "domain", "uri" |
 | `.Validate(fn)` | Custom validation function |
 
-Options not marked with `.MCP(true)` are hidden from LLMs but available in TUI.
+Options not marked with `.MCP(true)` are hidden from LLMs and CLI but available in TUI.
+
+## CLI
+
+The CLI is generated from the same menu definition. Required flags are shown inline in help output:
+
+```
+$ myapp --help
+
+  COMMANDS
+
+    add-task --title <value> [--flags]    Create a new task
+    complete-task --id <value>            Mark task as done
+    list-tasks                            Show all tasks
+```
+
+### Theming
+
+yeahno includes a default theme, or customize with your own colors:
+
+```go
+// Use default theme
+theme := yeahno.DefaultTheme()
+
+// Or customize
+theme := yeahno.DefaultTheme().
+    WithPrimary(lipgloss.Color("#00ff00")).
+    WithError(lipgloss.Color("#ff0000"))
+
+// Pass to fang
+fang.Execute(ctx, rootCmd, fang.WithColorSchemeFunc(theme.FangColorScheme()))
+```
+
+| Theme Field | Usage |
+|-------------|-------|
+| `Primary` | Titles, commands |
+| `Secondary` | Flags, arguments |
+| `Muted` | Descriptions, dimmed text |
+| `Surface` | Code block background (light terminal) |
+| `SurfaceLight` | Code block background (dark terminal) |
+| `Error` | Error header |
 
 ## Tips for MCP Tools
 
@@ -97,12 +144,12 @@ The `.Description()` text becomes the MCP tool's description that LLMs see when 
 
 ```go
 // ❌ Bad: Vague, doesn't help LLM distinguish from similar tools
-yeahno.NewOption("Create Report", "create_report").
-    Description("Create a report")
+yeahno.NewOption("Create Job", "create_job").
+    Description("Create a job")
 
 // ✅ Good: Clear output format, storage location, and purpose
-yeahno.NewOption("Create Report", "create_report").
-    Description("Generate a Markdown research report stored in the reports table. Output is human-readable narrative text.")
+yeahno.NewOption("Create Job", "create_job").
+    Description("Create a new repair job ticket. Saves to the jobs table and returns the job ID.")
 ```
 
 ### Avoid `fmt.Print` in Handlers
@@ -134,14 +181,14 @@ menu := yeahno.NewSelect[string]().
     ToolPrefix("company").
     Options(
         yeahno.NewOption("Add & Monitor", "add_monitor").
-            Description("Add a company to monitor").
+            Description("Add a company and begin monitoring for changes. Saves to companies table.").
             WithField(yeahno.NewInput().Key("domain").Format("domain")).
             WithField(yeahno.NewInput().Key("name").Title("Company name")).
             WithField(yeahno.NewInput().Key("ticker").Required(false)).
             MCP(true),
 
         yeahno.NewOption("List", "list").
-            Description("List monitored companies").
+            Description("List all monitored companies. Returns a formatted text list.").
             MCP(true),
 
         yeahno.NewOption("Cancel", "cancel"),  // TUI only
