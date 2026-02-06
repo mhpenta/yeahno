@@ -12,6 +12,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+const maxFieldLength = 10000
+
 type ToolDef struct {
 	Tool    *mcp.Tool
 	Handler mcp.ToolHandler
@@ -22,20 +24,31 @@ type formatValidator struct {
 	validate     func(string) error
 }
 
+var hostnamePattern = regexp.MustCompile(`^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$`)
+
 var formatValidators = map[string]formatValidator{
 	"uri": {
 		schemaFormat: "uri",
 		validate: func(s string) error {
 			s = strings.TrimSpace(s)
 			if s == "" {
-				return nil // Let required check handle empty
+				return nil
 			}
-			testURL := s
-			if !strings.HasPrefix(testURL, "http://") && !strings.HasPrefix(testURL, "https://") {
-				testURL = "https://" + testURL
+			parsed, err := url.Parse(s)
+			if err != nil {
+				return fmt.Errorf("invalid URI format")
 			}
-			parsed, err := url.Parse(testURL)
-			if err != nil || parsed.Host == "" {
+			if parsed.Scheme == "" {
+				s = "https://" + s
+				parsed, err = url.Parse(s)
+				if err != nil {
+					return fmt.Errorf("invalid URI format")
+				}
+			}
+			if parsed.Scheme != "http" && parsed.Scheme != "https" {
+				return fmt.Errorf("invalid URI scheme: only http and https are allowed")
+			}
+			if parsed.Host == "" {
 				return fmt.Errorf("invalid URI format")
 			}
 			return nil
@@ -46,18 +59,15 @@ var formatValidators = map[string]formatValidator{
 		validate: func(s string) error {
 			s = strings.TrimSpace(s)
 			if s == "" {
-				return nil // Let required check handle empty
+				return nil
 			}
 			s = strings.TrimPrefix(s, "https://")
 			s = strings.TrimPrefix(s, "http://")
 			if idx := strings.Index(s, "/"); idx != -1 {
 				s = s[:idx]
 			}
-			if s == "" || strings.Contains(s, " ") {
+			if !hostnamePattern.MatchString(s) {
 				return fmt.Errorf("invalid domain format")
-			}
-			if !strings.Contains(s, ".") {
-				return fmt.Errorf("invalid domain format: missing TLD")
 			}
 			return nil
 		},
@@ -81,6 +91,8 @@ func toSnakeCase(s string) string {
 	s = strings.Trim(s, "_")
 	return s
 }
+
+func intPtr(i int) *int { return &i }
 
 func resultToString(result any) string {
 	switch v := result.(type) {
@@ -141,6 +153,9 @@ func (s *Select[T]) ToTools() ([]ToolDef, error) {
 			if f.title != "" {
 				schema.Description = f.title
 			}
+			if f.charLimit > 0 {
+				schema.MaxLength = intPtr(f.charLimit)
+			}
 			if f.format != "" {
 				if fv, ok := formatValidators[f.format]; ok {
 					schema.Format = fv.schemaFormat
@@ -163,9 +178,14 @@ func (s *Select[T]) ToTools() ([]ToolDef, error) {
 			jschema.Required = required
 		}
 
-		schemaBytes, _ := json.Marshal(jschema)
+		schemaBytes, err := json.Marshal(jschema)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal schema for tool %s: %w", toolName, err)
+		}
 		var schemaMap map[string]any
-		json.Unmarshal(schemaBytes, &schemaMap)
+		if err := json.Unmarshal(schemaBytes, &schemaMap); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal schema for tool %s: %w", toolName, err)
+		}
 		
 		if len(required) > 0 {
 			schemaMap["required"] = required
@@ -202,6 +222,16 @@ func (s *Select[T]) makeToolHandler(opt Option[T]) mcp.ToolHandler {
 			}
 
 			if val, ok := input[fKey].(string); ok {
+				limit := maxFieldLength
+				if f.charLimit > 0 {
+					limit = f.charLimit
+				}
+				if len(val) > limit {
+					return &mcp.CallToolResult{
+						Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("%s exceeds maximum length of %d", fKey, limit)}},
+						IsError: true,
+					}, nil
+				}
 				if f.format != "" {
 					if fv, ok := formatValidators[f.format]; ok {
 						if err := fv.validate(val); err != nil {
@@ -232,7 +262,7 @@ func (s *Select[T]) makeToolHandler(opt Option[T]) mcp.ToolHandler {
 		result, err := s.handler(ctx, opt.Value, fields)
 		if err != nil {
 			return &mcp.CallToolResult{
-				Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
+				Content: []mcp.Content{&mcp.TextContent{Text: "tool execution failed"}},
 				IsError: true,
 			}, nil
 		}

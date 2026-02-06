@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -306,7 +307,7 @@ func TestToToolsHandlerError(t *testing.T) {
 	if !result.IsError {
 		t.Error("Expected IsError=true for handler error")
 	}
-	assertTextContentContains(t, result, "intentional failure")
+	assertTextContentContains(t, result, "tool execution failed")
 
 	// Tool name from Key "Succeed" -> "succeed"
 	result, err = env.session.CallTool(ctx, &mcp.CallToolParams{
@@ -476,6 +477,12 @@ func TestValidateFormat(t *testing.T) {
 		{"uri", "http://example.com/path", false},
 		{"uri", "example.com", false},
 		{"uri", "", false},
+		{"uri", "ftp://evil.com", true},
+		{"uri", "javascript:alert(1)", true},
+		{"uri", "file:///etc/passwd", true},
+		{"domain", "evil.com; rm -rf /", true},
+		{"domain", "evil.com\nHost: attacker.com", true},
+		{"domain", "../../../etc.passwd", true},
 		{"unknown", "anything", false},
 	}
 
@@ -1097,4 +1104,129 @@ func containsString(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestToToolsFieldLengthLimit(t *testing.T) {
+	var choice string
+
+	menu := yeahno.NewSelect[string]().
+		Title("Length Test").
+		Options(
+			yeahno.NewOption("Echo", "echo").
+				WithField(yeahno.NewInput().Key("msg").Title("Message").CharLimit(10)).
+				MCP(true),
+		).
+		Value(&choice).
+		Handler(func(ctx context.Context, action string, fields map[string]string) (any, error) {
+			return fields["msg"], nil
+		})
+
+	tools, err := menu.ToTools()
+	if err != nil {
+		t.Fatalf("ToTools failed: %v", err)
+	}
+
+	handler := tools[0].Handler
+
+	result, _ := handler(context.Background(), &mcp.CallToolRequest{
+		Params: &mcp.CallToolParamsRaw{
+			Name:      "echo",
+			Arguments: json.RawMessage(`{"msg": "short"}`),
+		},
+	})
+	if result.IsError {
+		t.Errorf("Expected success for short message: %v", getTextContent(result))
+	}
+
+	result, _ = handler(context.Background(), &mcp.CallToolRequest{
+		Params: &mcp.CallToolParamsRaw{
+			Name:      "echo",
+			Arguments: json.RawMessage(`{"msg": "` + strings.Repeat("a", 11) + `"}`),
+		},
+	})
+	if !result.IsError {
+		t.Error("Expected error for message exceeding charLimit")
+	}
+	assertTextContentContains(t, result, "exceeds maximum length")
+}
+
+func TestToToolsErrorSanitization(t *testing.T) {
+	var choice string
+
+	menu := yeahno.NewSelect[string]().
+		Title("Error Sanitize").
+		Options(
+			yeahno.NewOption("Fail", "fail").MCP(true),
+		).
+		Value(&choice).
+		Handler(func(ctx context.Context, action string, fields map[string]string) (any, error) {
+			return nil, fmt.Errorf("secret db password: hunter2 at /internal/path/db.go:42")
+		})
+
+	tools, err := menu.ToTools()
+	if err != nil {
+		t.Fatalf("ToTools failed: %v", err)
+	}
+
+	result, _ := tools[0].Handler(context.Background(), &mcp.CallToolRequest{
+		Params: &mcp.CallToolParamsRaw{
+			Name:      "fail",
+			Arguments: json.RawMessage(`{}`),
+		},
+	})
+	if !result.IsError {
+		t.Error("Expected error")
+	}
+	text := getTextContent(result)
+	if strings.Contains(text, "hunter2") || strings.Contains(text, "/internal/path") {
+		t.Errorf("Error message leaks internal details: %s", text)
+	}
+	assertTextContent(t, result, "tool execution failed")
+}
+
+func TestToToolsCharLimitInSchema(t *testing.T) {
+	var choice string
+
+	menu := yeahno.NewSelect[string]().
+		Title("Schema Limit").
+		Options(
+			yeahno.NewOption("Echo", "echo").
+				WithField(yeahno.NewInput().Key("msg").Title("Message").CharLimit(50)).
+				WithField(yeahno.NewInput().Key("note").Title("Note")).
+				MCP(true),
+		).
+		Value(&choice).
+		Handler(func(ctx context.Context, action string, fields map[string]string) (any, error) {
+			return fields["msg"], nil
+		})
+
+	tools, err := menu.ToTools()
+	if err != nil {
+		t.Fatalf("ToTools failed: %v", err)
+	}
+
+	schema, ok := tools[0].Tool.InputSchema.(map[string]any)
+	if !ok {
+		t.Fatal("InputSchema is not a map")
+	}
+	props, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("properties not present")
+	}
+
+	msg, ok := props["msg"].(map[string]any)
+	if !ok {
+		t.Fatal("msg property not found")
+	}
+	if msg["maxLength"] != float64(50) {
+		t.Errorf("Expected msg maxLength=50, got %v", msg["maxLength"])
+	}
+
+	note, ok := props["note"].(map[string]any)
+	if !ok {
+		t.Fatal("note property not found")
+	}
+	if _, hasMax := note["maxLength"]; hasMax {
+		t.Error("note should not have maxLength when CharLimit is not set")
+	}
 }
