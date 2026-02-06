@@ -1,9 +1,5 @@
 # yeahno
 
-<p>
-<img width="525" alt="yeahno Logo" src="https://github-production-user-asset-6210df.s3.amazonaws.com/183146177/538075071-1aeec958-e8cd-4376-a876-21e161af3023.jpg">
-</p>
-
 > [!WARNING]
 > This project is experimental. API may change.
 
