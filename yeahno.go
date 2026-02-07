@@ -3,6 +3,8 @@ package yeahno
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 )
@@ -269,6 +271,20 @@ func (i *Input) Required(required bool) *Input {
 func (i *Input) Format(format string) *Input {
 	i.format = format
 	return i
+}
+
+func (i *Input) resolvedKey() string {
+	if i.key != "" {
+		return i.key
+	}
+	return toSnakeCase(i.title)
+}
+
+func (i *Input) resolvedTitle() string {
+	if i.title != "" {
+		return i.title
+	}
+	return i.resolvedKey()
 }
 
 func (i *Input) buildValidator() func(string) error {
@@ -577,4 +593,20 @@ func (m *MultiSelect[T]) Run() error {
 		form = form.WithTheme(m.theme)
 	}
 	return form.Run()
+}
+
+var snakeCasePattern = regexp.MustCompile(`[^a-z0-9]+`)
+
+func toSnakeCase(s string) string {
+	s = strings.ToLower(s)
+	s = snakeCasePattern.ReplaceAllString(s, "_")
+	s = strings.Trim(s, "_")
+	return s
+}
+
+func toKebabCase(s string) string {
+	s = strings.ToLower(s)
+	s = snakeCasePattern.ReplaceAllString(s, "-")
+	s = strings.Trim(s, "-")
+	return s
 }

@@ -81,17 +81,6 @@ func ValidateFormat(format, value string) error {
 	return nil
 }
 
-var (
-	snakeCasePattern = regexp.MustCompile(`[^a-z0-9]+`)
-)
-
-func toSnakeCase(s string) string {
-	s = strings.ToLower(s)
-	s = snakeCasePattern.ReplaceAllString(s, "_")
-	s = strings.Trim(s, "_")
-	return s
-}
-
 func intPtr(i int) *int { return &i }
 
 func resultToString(result any) string {
@@ -144,10 +133,7 @@ func (s *Select[T]) ToTools() ([]ToolDef, error) {
 		var required []string
 
 		for _, f := range opt.fields {
-			fKey := f.key
-			if fKey == "" {
-				fKey = toSnakeCase(f.title)
-			}
+			fKey := f.resolvedKey()
 
 			schema := &jsonschema.Schema{Type: "string"}
 			if f.title != "" {
@@ -216,10 +202,7 @@ func (s *Select[T]) makeToolHandler(opt Option[T]) mcp.ToolHandler {
 
 		fields := make(map[string]string)
 		for _, f := range opt.fields {
-			fKey := f.key
-			if fKey == "" {
-				fKey = toSnakeCase(f.title)
-			}
+			fKey := f.resolvedKey()
 
 			if val, ok := input[fKey].(string); ok {
 				limit := maxFieldLength

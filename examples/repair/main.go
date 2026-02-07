@@ -18,6 +18,10 @@ import (
 //	go run ./examples/repair add-task --title "Fix bug"
 //	go run ./examples/repair complete-task --id 123
 //
+// Print agent skill definition:
+//
+//	go run ./examples/repair --agent-skill-md
+//
 // Run TUI:
 //
 //	go run ./examples/repair tui
@@ -55,7 +59,20 @@ func run() error {
 		return err
 	}
 
-	// Use yeahno theme with fang
+	skill, err := menu.ToSkill()
+	if err != nil {
+		return err
+	}
+	skill.
+		Workflow(
+			"List existing tasks with `task_list-tasks` to show current state",
+			"Add new tasks with `task_add-task` — priority defaults to normal",
+			"Complete tasks with `task_complete-task` using the task ID from the list",
+		).
+		Guideline("Priority values: low, normal, high, urgent").
+		Section("Error Handling", "If a task ID is not found, call task_list-tasks first to get valid IDs.").
+		Attach(rootCmd)
+
 	theme := yeahno.DefaultTheme()
 	return fang.Execute(context.Background(), rootCmd,
 		fang.WithVersion("1.0.0"),

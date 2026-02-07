@@ -91,11 +91,7 @@ func (s *Select[T]) buildSubcommand(opt Option[T]) *cobra.Command {
 	var requiredFlags []string
 	for _, f := range opt.fields {
 		if f.required {
-			fKey := f.key
-			if fKey == "" {
-				fKey = toSnakeCase(f.title)
-			}
-			flagName := toKebabCase(fKey)
+			flagName := toKebabCase(f.resolvedKey())
 			requiredFlags = append(requiredFlags, fmt.Sprintf("--%s <value>", flagName))
 		}
 	}
@@ -130,10 +126,7 @@ func (s *Select[T]) buildSubcommand(opt Option[T]) *cobra.Command {
 			// Collect field values from flags
 			fields := make(map[string]string)
 			for _, f := range opt.fields {
-				fKey := f.key
-				if fKey == "" {
-					fKey = toSnakeCase(f.title)
-				}
+				fKey := f.resolvedKey()
 
 				if val, ok := flagValues[fKey]; ok && val != nil && *val != "" {
 					// Validate format if specified
@@ -169,10 +162,7 @@ func (s *Select[T]) buildSubcommand(opt Option[T]) *cobra.Command {
 
 	// Add flags for each field
 	for _, f := range opt.fields {
-		fKey := f.key
-		if fKey == "" {
-			fKey = toSnakeCase(f.title)
-		}
+		fKey := f.resolvedKey()
 
 		flagName := toKebabCase(fKey)
 		flagDesc := f.title
@@ -195,15 +185,6 @@ func (s *Select[T]) buildSubcommand(opt Option[T]) *cobra.Command {
 	return cmd
 }
 
-// toKebabCase converts a string to kebab-case for CLI flag/command names.
-func toKebabCase(s string) string {
-	s = strings.ToLower(s)
-	s = snakeCasePattern.ReplaceAllString(s, "-")
-	s = strings.Trim(s, "-")
-	return s
-}
-
-// formatCLIOutput formats handler results for CLI output.
 func formatCLIOutput(result any) string {
 	switch v := result.(type) {
 	case string:

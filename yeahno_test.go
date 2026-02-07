@@ -1,6 +1,7 @@
 package yeahno_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/mhpenta/yeahno"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/spf13/cobra"
 )
 
 // TestToToolsBasic tests a simple select menu converted to MCP tools.
@@ -1229,4 +1231,248 @@ func TestToToolsCharLimitInSchema(t *testing.T) {
 	if _, hasMax := note["maxLength"]; hasMax {
 		t.Error("note should not have maxLength when CharLimit is not set")
 	}
+}
+
+func TestToSkill(t *testing.T) {
+	var choice string
+
+	menu := yeahno.NewSelect[string]().
+		Title("Site Manager").
+		Description("Manage monitored websites").
+		ToolPrefix("site").
+		Options(
+			yeahno.NewOption("Add Site", "add").
+				Description("Register a new site for monitoring").
+				WithField(yeahno.NewInput().Key("domain").Title("Domain").Format("domain")).
+				WithField(yeahno.NewInput().Key("notes").Title("Notes").Required(false)).
+				MCP(true),
+
+			yeahno.NewOption("List Sites", "list").
+				Description("Show all monitored sites").
+				MCP(true),
+
+			yeahno.NewOption("Admin", "admin"),
+		).
+		Value(&choice).
+		Handler(func(ctx context.Context, action string, fields map[string]string) (any, error) {
+			return action, nil
+		})
+
+	sk, err := menu.ToSkill()
+	if err != nil {
+		t.Fatalf("ToSkill failed: %v", err)
+	}
+
+	skill := sk.String()
+
+	checks := []string{
+		"---\nname: site\n",
+		"description: Manage monitored websites Use when the user needs to:",
+		"register a new site for monitoring",
+		"show all monitored sites",
+		"# Site Manager",
+		"### `site_add_site`",
+		"Register a new site for monitoring",
+		"### `site_list_sites`",
+		"| `domain` | yes | domain | Domain |",
+		"| `notes` | no | string | Notes |",
+		"## Workflow",
+		"## Guidelines",
+		"`domain` (domain format)",
+		"Always provide required fields: `domain`",
+	}
+
+	for _, check := range checks {
+		if !strings.Contains(skill, check) {
+			t.Errorf("Skill missing expected content: %q\n\nGot:\n%s", check, skill)
+		}
+	}
+
+	if strings.Contains(skill, "admin") || strings.Contains(skill, "Admin") {
+		t.Error("Skill should not contain non-MCP options")
+	}
+}
+
+func TestToSkillNoHandler(t *testing.T) {
+	var choice string
+
+	menu := yeahno.NewSelect[string]().
+		Title("Test").
+		Options(yeahno.NewOption("A", "a").MCP(true)).
+		Value(&choice)
+
+	_, err := menu.ToSkill()
+	if err == nil {
+		t.Error("Expected error for missing handler")
+	}
+}
+
+func TestSkillBuilder(t *testing.T) {
+	var choice string
+
+	menu := yeahno.NewSelect[string]().
+		Title("Task Manager").
+		Description("Manage repair tasks").
+		ToolPrefix("task").
+		Options(
+			yeahno.NewOption("Add Task", "add").
+				Description("Create a new task").
+				WithField(yeahno.NewInput().Key("title").Title("Title").Required(true)).
+				WithField(yeahno.NewInput().Key("priority").Title("Priority")).
+				MCP(true),
+			yeahno.NewOption("List Tasks", "list").
+				Description("Show all tasks").
+				MCP(true),
+			yeahno.NewOption("Complete Task", "complete").
+				Description("Mark a task as done").
+				WithField(yeahno.NewInput().Key("task_id").Title("Task ID").Required(true)).
+				MCP(true),
+		).
+		Value(&choice).
+		Handler(func(ctx context.Context, action string, fields map[string]string) (any, error) {
+			return action, nil
+		})
+
+	sk, err := menu.ToSkill()
+	if err != nil {
+		t.Fatalf("ToSkill failed: %v", err)
+	}
+
+	t.Run("description override", func(t *testing.T) {
+		sk.Description("Full task lifecycle management for repair tickets")
+		out := sk.String()
+		if !strings.Contains(out, "description: Full task lifecycle management for repair tickets") {
+			t.Errorf("Description override not applied:\n%s", out)
+		}
+		if strings.Contains(out, "description: Manage repair tasks Use when") {
+			t.Error("Old auto-generated description should be replaced")
+		}
+	})
+
+	t.Run("custom workflow", func(t *testing.T) {
+		sk.Workflow(
+			"List existing tasks with `task_list_tasks`",
+			"Add new tasks with `task_add_task`",
+			"Complete tasks with `task_complete_task`",
+		)
+		out := sk.String()
+		if !strings.Contains(out, "1. List existing tasks with `task_list_tasks`") {
+			t.Errorf("Custom workflow step 1 missing:\n%s", out)
+		}
+		if !strings.Contains(out, "3. Complete tasks with `task_complete_task`") {
+			t.Errorf("Custom workflow step 3 missing:\n%s", out)
+		}
+		if strings.Contains(out, "**Create a new task** — `task_add_task`") {
+			t.Error("Default workflow should be replaced when custom workflow is set")
+		}
+	})
+
+	t.Run("guideline append", func(t *testing.T) {
+		sk.Guideline("Priority values: low, normal, high, urgent")
+		out := sk.String()
+		if !strings.Contains(out, "- Priority values: low, normal, high, urgent") {
+			t.Errorf("Custom guideline missing:\n%s", out)
+		}
+		if !strings.Contains(out, "Always provide required fields:") {
+			t.Error("Default guidelines should be preserved")
+		}
+	})
+
+	t.Run("custom section", func(t *testing.T) {
+		sk.Section("Error Handling", "If task ID is not found, call task_list_tasks first.")
+		out := sk.String()
+		if !strings.Contains(out, "## Error Handling") {
+			t.Errorf("Custom section heading missing:\n%s", out)
+		}
+		if !strings.Contains(out, "If task ID is not found, call task_list_tasks first.") {
+			t.Errorf("Custom section body missing:\n%s", out)
+		}
+	})
+
+	t.Run("chaining returns self", func(t *testing.T) {
+		sk2, _ := menu.ToSkill()
+		result := sk2.
+			Description("test").
+			Workflow("step one").
+			Guideline("rule one").
+			Section("Extra", "content")
+		if result != sk2 {
+			t.Error("Chainable methods should return same pointer")
+		}
+	})
+}
+
+func TestAttachAgentSkillMd(t *testing.T) {
+	var choice string
+
+	menu := yeahno.NewSelect[string]().
+		Title("Site Manager").
+		Description("Manage monitored websites").
+		ToolPrefix("site").
+		Options(
+			yeahno.NewOption("Add Site", "add").
+				Description("Register a new site for monitoring").
+				WithField(yeahno.NewInput().Key("domain").Title("Domain").Format("domain")).
+				MCP(true),
+			yeahno.NewOption("List Sites", "list").
+				Description("Show all monitored sites").
+				MCP(true),
+		).
+		Value(&choice).
+		Handler(func(ctx context.Context, action string, fields map[string]string) (any, error) {
+			return action, nil
+		})
+
+	sk, err := menu.ToSkill()
+	if err != nil {
+		t.Fatalf("ToSkill failed: %v", err)
+	}
+
+	rootCmd := &cobra.Command{
+		Use:   "site",
+		Short: "Site manager",
+	}
+	sk.Attach(rootCmd)
+
+	t.Run("flag is registered", func(t *testing.T) {
+		f := rootCmd.PersistentFlags().Lookup("agent-skill-md")
+		if f == nil {
+			t.Fatal("--agent-skill-md flag not registered")
+		}
+		if f.Usage != "Print agent skill definition (SKILL.md) to stdout" {
+			t.Errorf("Unexpected flag usage: %s", f.Usage)
+		}
+	})
+
+	t.Run("without flag runs normally", func(t *testing.T) {
+		cmd := &cobra.Command{
+			Use:   "site",
+			Short: "Site manager",
+			RunE: func(cmd *cobra.Command, args []string) error {
+				fmt.Fprint(cmd.OutOrStdout(), "normal output")
+				return nil
+			},
+		}
+		sk.Attach(cmd)
+
+		var buf bytes.Buffer
+		cmd.SetOut(&buf)
+		cmd.SetArgs([]string{})
+
+		err := cmd.Execute()
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+		if !strings.Contains(buf.String(), "normal output") {
+			t.Errorf("Expected normal output, got: %s", buf.String())
+		}
+	})
+
+	t.Run("attach returns self for chaining", func(t *testing.T) {
+		cmd := &cobra.Command{Use: "test"}
+		result := sk.Attach(cmd)
+		if result != sk {
+			t.Error("Attach should return same pointer")
+		}
+	})
 }

@@ -127,6 +127,40 @@ fang.Execute(ctx, rootCmd, fang.WithColorSchemeFunc(theme.FangColorScheme()))
 | `SurfaceLight` | Code block background (dark terminal) |
 | `Error` | Error header |
 
+## Skills
+
+Generate a `SKILL.md` agent skill definition from your menu. Skills describe available tools, workflows, and guidelines so LLMs know how to use your CLI/MCP server.
+
+```go
+skill, _ := menu.ToSkill()
+skill.
+    Workflow(
+        "List existing tasks with `task_list-tasks`",
+        "Add new tasks with `task_add-task`",
+        "Complete tasks with `task_complete-task` using the task ID",
+    ).
+    Guideline("Priority values: low, normal, high, urgent").
+    Section("Error Handling", "If a task ID is not found, call task_list-tasks first.").
+    Attach(rootCmd)
+```
+
+Print the skill definition:
+
+```bash
+myapp --agent-skill-md
+```
+
+### Skill Methods
+
+| Method | Description |
+|--------|-------------|
+| `.ToSkill()` | Generate a `Skill` from the menu (MCP-enabled options only) |
+| `.Workflow(steps...)` | Define ordered workflow steps |
+| `.Guideline(items...)` | Add usage guidelines |
+| `.Section(heading, body)` | Add custom sections |
+| `.Attach(cmd)` | Add `--agent-skill-md` flag to a Cobra command |
+| `.String()` | Render the skill as Markdown with YAML frontmatter |
+
 ## Tips for MCP Tools
 
 ### Write Clear Descriptions
