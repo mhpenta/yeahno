@@ -3,9 +3,9 @@
 > [!WARNING]
 > This project is experimental. API may change.
 
-Define a form once. Run it as a TUI, CLI, or MCP tools. For administrative bots and humans alike!
+Define a form once. Run it as a TUI, CLI, API or MCP tool. For administrative bots and humans alike!
 
-Built on [huh](https://github.com/charmbracelet/huh), [Cobra](https://github.com/spf13/cobra), [tap-go](https://github.com/mhpenta/tap-go), and [Go's official MCP SDK](https://github.com/modelcontextprotocol/go-sdk).
+Built on [huh](https://github.com/charmbracelet/huh), [Cobra](https://github.com/spf13/cobra), [tool API pattern](https://github.com/mhpenta/tap-go), and [Go's official MCP SDK](https://github.com/modelcontextprotocol/go-sdk).
 
 ## Install
 
@@ -91,6 +91,66 @@ Each MCP-enabled option becomes its own tool (or CLI subcommand) with a clean sc
 | `.Validate(fn)` | Custom validation function |
 
 Options not marked with `.MCP(true)` are hidden from LLMs and CLI but available in TUI.
+
+### TAP API Reference
+
+When you call `.RegisterTAP(mux)` (or `.RegisterHTTP(mux)`), yeahno exposes Tool API Pattern (TAP) endpoints:
+
+```text
+GET  /tools
+GET  /tools/{name}
+POST /tools/{name}/run
+```
+
+`GET /tools` returns a plain-text index:
+
+```text
+Site Manager - Manage monitored sites
+
+site_add: Register a new site for monitoring. Saves to the sites table.
+site_list: List all monitored sites. Returns a formatted text list.
+```
+
+`GET /tools/{name}` returns tool documentation:
+
+```json
+{
+  "name": "site_add",
+  "description": "Register a new site for monitoring. Saves to the sites table.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "domain": {
+        "type": "string",
+        "format": "hostname"
+      }
+    },
+    "required": ["domain"]
+  }
+}
+```
+
+`POST /tools/{name}/run` invokes a tool:
+
+```bash
+curl -X POST localhost:8080/tools/site_add/run \
+  -H 'content-type: application/json' \
+  -d '{"domain":"example.com"}'
+```
+
+Response:
+
+```json
+{"result":"Created site example.com"}
+```
+
+Error format follows TAP:
+
+```json
+{"code":"invalid_request","message":"invalid JSON body: ..."}
+```
+
+Note: TAP streaming transport is provided by `tap-go`; current yeahno wiring registers standard request/response handlers.
 
 ## CLI
 
