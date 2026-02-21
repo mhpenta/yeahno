@@ -5,7 +5,7 @@
 
 Define a form once. Run it as a TUI, CLI, or MCP tools. For administrative bots and humans alike!
 
-Built on [huh](https://github.com/charmbracelet/huh), [Cobra](https://github.com/spf13/cobra), and [Go's official MCP SDK](https://github.com/modelcontextprotocol/go-sdk).
+Built on [huh](https://github.com/charmbracelet/huh), [Cobra](https://github.com/spf13/cobra), [tap-go](https://github.com/mhpenta/tap-go), and [Go's official MCP SDK](https://github.com/modelcontextprotocol/go-sdk).
 
 ## Install
 
@@ -49,6 +49,9 @@ fang.Execute(ctx, rootCmd, fang.WithColorSchemeFunc(yeahno.DefaultTheme().FangCo
 
 // Or register as MCP tools
 menu.RegisterTools(server)
+
+// Or register as a TAP API server (via tap-go)
+menu.RegisterTAP(mux)
 ```
 
 Each MCP-enabled option becomes its own tool (or CLI subcommand) with a clean schema containing only that option's fields.
@@ -60,9 +63,11 @@ Each MCP-enabled option becomes its own tool (or CLI subcommand) with a clean sc
 | Method | Description |
 |--------|-------------|
 | `.ToolPrefix(prefix)` | Prefix for all tool names (e.g., "site" → "site_add") |
-| `.Handler(fn)` | Shared handler for TUI, CLI, and MCP |
+| `.Handler(fn)` | Shared handler for TUI, CLI, MCP, and TAP |
 | `.ToTools()` | Generate `[]ToolDef` (tool + handler pairs) |
 | `.RegisterTools(server)` | Register all tools with MCP server |
+| `.RegisterTAP(mux)` | Register TAP HTTP endpoints via tap-go |
+| `.RegisterHTTP(mux)` | Alias for `.RegisterTAP(mux)` |
 | `.RegisterCLI(cmd)` | Register all subcommands with Cobra command |
 | `.CLI()` | Generate standalone Cobra command tree |
 

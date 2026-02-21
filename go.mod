@@ -1,12 +1,13 @@
 module github.com/mhpenta/yeahno
 
-go 1.24.2
+go 1.25.7
 
 require (
 	charm.land/lipgloss/v2 v2.0.0-beta.3.0.20251106193318-19329a3e8410
 	github.com/charmbracelet/fang v0.4.4
 	github.com/charmbracelet/huh v0.8.0
 	github.com/google/jsonschema-go v0.4.2
+	github.com/mhpenta/tap-go v0.1.2
 	github.com/modelcontextprotocol/go-sdk v1.2.0
 	github.com/spf13/cobra v1.10.2
 )
